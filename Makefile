@@ -15,7 +15,7 @@ endif
 
 LD_FLAGS    = -lcudart -L/usr/local/cuda/lib64
 EXE	        = cuda_canny
-OBJ	        = main.o canny.o
+OBJ	        = main.o canny.o serial.o
 
 default: $(EXE)
 
@@ -24,6 +24,10 @@ main.o: main.cu
 
 canny.o: canny.cu
 	$(NVCC) -c -o $@ canny.cu $(NVCC_FLAGS) $(OPENCV_FLAGS)
+
+serial.o: serial.cu
+	$(NVCC) -c -o $@ serial.cu $(NVCC_FLAGS) $(OPENCV_FLAGS)
+
 
 $(EXE): $(OBJ)
 	$(NVCC) $(OBJ) -o $(EXE) $(LD_FLAGS) $(NVCC_FLAGS) $(OPENCV_FLAGS)
