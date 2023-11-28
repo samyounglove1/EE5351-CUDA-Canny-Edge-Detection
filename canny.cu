@@ -1,6 +1,10 @@
 #include <iostream>
 #include <stdio.h>
 
+
+//forward declare functions
+float utilGetMax(float* arr, unsigned int size);
+
 #define GAUSS_KERNEL_SIZE 5
 #define GAUSS_KERNEL_SUM 159
 #define GKS_DIV_2 (GAUSS_KERNEL_SIZE >> 1)
@@ -130,4 +134,49 @@ void do_cuda_canny(unsigned char* outImage, unsigned char* inImage, int width, i
     //final free operations, subject to change
     cudaFree(dImageOut);
     cudaFree(dGaussFilterOut);
+}
+
+
+#define maxReduceBlockSize 256
+__global__ void maxReduction(float* arrIn, float* maxOut, unsigned int size) {
+    __shared__ float data[maxReduceBlockSize*2];
+
+    unsigned int t = threadIdx.x;
+    unsigned int start = 2*blockDim.x*blockIdx.x;
+
+    //preload 2 elements per thread
+    data[t] = (start + t < size) ? arrIn[start + t] : 0;
+    data[t + maxReduceBlockSize] = (start + maxReduceBlockSize + t < size) ? arrIn[start + maxReduceBlockSize + t] : 0;
+
+    for (unsigned int stride = maxReduceBlockSize; stride >= 1; stride >>=1) {
+        __syncthreads();
+        if (t < stride)
+            if (data[t] < data[t + stride])
+                data[t] = data[t + stride];
+    }
+
+    if (t == 0) //last active thread will be holding max value, should write it back
+        maxOut[blockIdx.x] = data[t];
+}
+
+
+float utilGetMax(float* arr, unsigned int size) {
+    //arr should already be a device array
+    float* maxOut;//allocate array to hold resulting max values
+    unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
+    cudaMalloc(&maxOut, sizeof(float)*divSize);
+
+    maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
+    while (divSize > 1) {
+        cudaDeviceSynchronize();
+        unsigned int tempDivSize = divSize;
+        divSize = ceil((float) size / (maxReduceBlockSize * 2));
+        maxReduction<<<divSize, maxReduceBlockSize>>>(maxOut, maxOut, tempDivSize);
+    }
+    cudaDeviceSynchronize();
+    float res = 0;
+    cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(maxOut);
+    
+    return res;
 }

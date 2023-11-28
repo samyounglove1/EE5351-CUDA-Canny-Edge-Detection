@@ -25,7 +25,7 @@ bool equal(const cv::Mat & a, const cv::Mat & b)
 int main(int argc, char *argv[]) {
     //TODO: implement some kind of argument based or interactive image selection
     cv::Mat greyImg;    
-    cv::Mat baseImg = cv::imread("/home/jans/EE5351/canny_cuda/dog_flag.jpg");
+    cv::Mat baseImg = cv::imread("/home/jans/EE5351/canny_cuda/lenna.png");
     cv::cvtColor(baseImg, greyImg, cv::COLOR_BGR2GRAY);
     greyImg.convertTo(greyImg, CV_8U);
 
