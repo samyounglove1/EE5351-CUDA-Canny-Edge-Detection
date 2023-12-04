@@ -1,7 +1,6 @@
 #include <iostream>
 #include <stdio.h>
 
-
 //forward declare functions
 float utilGetMax(float* arr, unsigned int size);
 
@@ -73,12 +72,22 @@ __global__ void floatArrToUnsignedChar(float* inImage, unsigned char* outImage, 
     }
 }
 
-void do_cuda_canny(unsigned char* outImage, unsigned char* inImage, int width, int height) {
+
+void doCudaCannyInjectStage(unsigned char* outImage, unsigned char* inImage, double* timestamps, int width, int height, int stage, float* injection) {
     //TODO timing event setup
+    cudaEvent_t start, lStart, lEnd;//start will overarc the whole thing
+    float time = 0;
+
+    cudaEventCreate(&start);
+    cudaEventCreate(&lStart);
+    cudaEventCreate(&lEnd); //lStart and lEnd are local start/ends
 
     unsigned int imgSize = width*height;
-
+    
+    cudaEventRecord(start);
+    cudaEventRecord(lStart);
     //gaussian filter (maybe other parameter loading/allocation)
+
     unsigned char* dImageIn;
     float* dGaussFilterOut; //floats will be more accurate after weighted division
     unsigned char gKernel[GAUSS_KERNEL_SIZE*GAUSS_KERNEL_SIZE] = 
@@ -92,48 +101,156 @@ void do_cuda_canny(unsigned char* outImage, unsigned char* inImage, int width, i
 
 
     cudaMalloc(&dImageIn, sizeof(unsigned char)*imgSize);
-    cudaMemcpy(dImageIn, inImage, sizeof(unsigned char)*imgSize, cudaMemcpyHostToDevice);
-
     cudaMalloc(&dGaussFilterOut, sizeof(float)*imgSize);
 
-    cudaMemcpyToSymbol(G_Filter_Kernel, gKernel, 25*sizeof(unsigned char));
-
-    //gaussian filter kernel pre-call stuff
-    dim3 blockSize(GAUSS_BLOCK_SIZE, GAUSS_BLOCK_SIZE);
-    dim3 gridSize(ceil((float) width / GAUSS_TILE_SIZE), ceil((float) height / GAUSS_TILE_SIZE));
-    gaussianFilter<<<gridSize, blockSize>>>(dImageIn, dGaussFilterOut, width, height);
-    cudaDeviceSynchronize();
+    if (stage == 0) {
+        cudaMemcpy(dGaussFilterOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);//force override
+    } else if (stage < 0) { //otherwise behave as normally // if stage greater, we skip this step entirely
+        cudaMemcpy(dImageIn, inImage, sizeof(unsigned char)*imgSize, cudaMemcpyHostToDevice);
+        cudaMemcpyToSymbol(G_Filter_Kernel, gKernel, 25*sizeof(unsigned char));
+    
+        //gaussian filter kernel pre-call stuff
+        dim3 blockSize(GAUSS_BLOCK_SIZE, GAUSS_BLOCK_SIZE);
+        dim3 gridSize(ceil((float) width / GAUSS_TILE_SIZE), ceil((float) height / GAUSS_TILE_SIZE));
+        gaussianFilter<<<gridSize, blockSize>>>(dImageIn, dGaussFilterOut, width, height);
+        cudaDeviceSynchronize();
+    }
+    cudaEventRecord(lEnd);
+    cudaEventSynchronize(lEnd);
+    cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[0] = time;//store to timestamp array
 
     //memory efficient behavior should possibly free input device array that 
     //was used in previous kernel call while waiting for current kernel call to finish
     //i.e. free dImageIn while waiting for kernel call to find gradient intensity to finish?
     
+    cudaFree(dImageIn); //free earlier step data, no longer of use
+
     //put next stage functions here, be sure to update later call free's and kernel func input vars
 
+    //step 2 gradient calculation
+    cudaEventRecord(start);
+    cudaEventRecord(lStart);
 
+    //allocations
+    float* dEdgeGradient;
+    float* dDirections;
+    cudaMalloc(&dEdgeGradient, sizeof(float)*imgSize);
+    cudaMalloc(&dDirections, sizeof(float)*imgSize);
+    //declare sobel filters as const memory
+    if (stage == 1) { //directly inject step 2 results from serial instead of executing this in parallel
+        cudaMemcpy(dEdgeGradient, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
+    } else if (stage < 1) {
+        //further allocations and thread configs here
+        
+        //placeholder to ensure framework functionality
+        cudaMemcpy(dEdgeGradient, dGaussFilterOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+    }
 
+    cudaEventRecord(lEnd);
+    cudaEventSynchronize(lEnd);
+    cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[1] = time;//store to timestamp array
 
+    cudaFree(dGaussFilterOut);
 
+    //step 3 non-max suppression
+    cudaEventRecord(start);
+    cudaEventRecord(lStart);
 
+    //allocations
+    float* dNmsOutput;
+    cudaMalloc(&dNmsOutput, sizeof(float)*imgSize);
+
+    if (stage == 2) {
+        cudaMemcpy(dNmsOutput, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
+    } else if (stage < 2) {
+        //further allocations and thread configs here
+        
+        //placeholder to ensure framework functionality
+        cudaMemcpy(dNmsOutput, dEdgeGradient, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+    }
+
+    cudaEventRecord(lEnd);
+    cudaEventSynchronize(lEnd);
+    cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[2] = time;//store to timestamp array
+
+    cudaFree(dEdgeGradient);
+    cudaFree(dDirections);
+
+    //step 4 double thresholding
+    cudaEventRecord(start);
+    cudaEventRecord(lStart);
+
+    //allocations
+    float* dThreshOut;
+    cudaMalloc(&dThreshOut, sizeof(float)*imgSize);
+
+    if (stage == 3) {
+        cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
+    } else if (stage < 3) {
+        //further allocations and thread configs here
+        
+        //placeholder to ensure framework functionality
+        cudaMemcpy(dThreshOut, dNmsOutput, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+    }
+
+    cudaEventRecord(lEnd);
+    cudaEventSynchronize(lEnd);
+    cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[3] = time;//store to timestamp array
+
+    cudaFree(dNmsOutput);
+
+    //step 5 edge tracking via hysterersis
+    cudaEventRecord(start);
+    cudaEventRecord(lStart);
+
+    float* dHysteresisOut;
+    cudaMalloc(&dHysteresisOut, sizeof(float)*imgSize);
+    //further allocations and thread configs here
+
+    //placeholder to ensure framework functionality
+    cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+
+    cudaEventRecord(lEnd);
+    cudaEventSynchronize(lEnd);
+    cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[4] = time;//store to timestamp array
+
+    cudaFree(dThreshOut);
 
     //end variable cast to unsigned char behavior
     //need this because our intermediary operations will be working with floats for greater accuracy
+    cudaEventRecord(start);
+    cudaEventRecord(lStart);
     unsigned char* dImageOut;
     cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
     unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
-    floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dGaussFilterOut, dImageOut, imgSize);
+    floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
     
-    //intermediary free operation example WILL CHANGE!!!
-    cudaFree(dImageIn); //done after kernel call to allow CPU to run this while GPU runs kernel function?
+    cudaEventRecord(lEnd);
+    cudaEventSynchronize(lEnd);
+    cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[5] = time;//store to timestamp array
+    
+    //overall timing record
+    cudaEventElapsedTime(&time, start, lEnd);
+    timestamps[6] = time;
     
     cudaDeviceSynchronize();
     
+    cudaFree(dHysteresisOut);
 
     cudaMemcpy(outImage, dImageOut, sizeof(unsigned char)*imgSize, cudaMemcpyDeviceToHost);
 
     //final free operations, subject to change
     cudaFree(dImageOut);
-    cudaFree(dGaussFilterOut);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(lStart);
+    cudaEventDestroy(lEnd);
 }
 
 

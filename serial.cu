@@ -217,7 +217,8 @@ using std::chrono::duration_cast;
 using std::chrono::duration;
 using std::chrono::milliseconds;
 
-void do_serial_canny(unsigned char* outImage, unsigned char* inImage, int width, int height) {
+
+void doSerialCannyExtractStage(unsigned char* outImage, unsigned char* inImage, double* timestamps, int width, int height, int stage, float* extracted) {
     // cudaEvent_t start, stop, noiseReduction, gradientCalculation, nonMaxSupression, doubleThresh, edgeTrack;
     auto start = high_resolution_clock::now();
     auto t0 = start;
@@ -228,7 +229,9 @@ void do_serial_canny(unsigned char* outImage, unsigned char* inImage, int width,
     serialGaussianFilter(inImage, postGaussFilter, width, height);
     auto t1 = high_resolution_clock::now();
     duration<double, std::milli> elapsedMs = t1 - t0;
-    printf("Gaussian Filter Noise Reduction Ran in %lf ms\n", elapsedMs.count());
+    // printf("Gaussian Filter Noise Reduction Ran in %lf ms\n", elapsedMs.count());
+    timestamps[0] = elapsedMs.count();
+    if (stage == 0) memcpy(extracted, postGaussFilter, sizeof(float)*imgSize);
 
     //sobel filter application
     t0 = high_resolution_clock::now();
@@ -237,7 +240,9 @@ void do_serial_canny(unsigned char* outImage, unsigned char* inImage, int width,
     serialSobelFilter(postGaussFilter, edgeGradient, directions, width, height);
     t1 = high_resolution_clock::now();
     elapsedMs = t1 - t0;
-    printf("Sobel Filtering Ran in %lf ms\n", elapsedMs.count());
+    // printf("Sobel Filtering Ran in %lf ms\n", elapsedMs.count());
+    timestamps[1] = elapsedMs.count();
+    if (stage == 1) memcpy(extracted, edgeGradient, sizeof(float)*imgSize);
 
     //non maximum suppression
     t0 = high_resolution_clock::now();
@@ -245,21 +250,26 @@ void do_serial_canny(unsigned char* outImage, unsigned char* inImage, int width,
     serialNonMaxSuppression(edgeGradient, directions, nmsOutput, width, height);
     t1 = high_resolution_clock::now();
     elapsedMs = t1 - t0;
-    printf("Non-Maximum Supression Ran in %lf ms\n", elapsedMs.count());
+    // printf("Non-Maximum Supression Ran in %lf ms\n", elapsedMs.count());
+    timestamps[2] = elapsedMs.count();
+    if (stage == 2) memcpy(extracted, nmsOutput, sizeof(float)*imgSize);
 
     //double thresholding
     t0 = high_resolution_clock::now();
     float* threshOut = (float*) calloc(imgSize, sizeof(float));
     serialDoubleThreshold(nmsOutput, threshOut, width, height, .05, 0.09);
     t1 = high_resolution_clock::now();elapsedMs = t1 - t0;
-    printf("Double Thresholding Ran in %lf ms\n", elapsedMs.count());
+    // printf("Double Thresholding Ran in %lf ms\n", elapsedMs.count());
+    timestamps[3] = elapsedMs.count();
+    if (stage == 3) memcpy(extracted, threshOut, sizeof(float)*imgSize);
 
     //edge tracking by hysteresis
     t0 = high_resolution_clock::now();
     float* hysteresisOut = (float*) calloc(imgSize, sizeof(float));
     serialHysteresis(threshOut, hysteresisOut, width, height);
     t1 = high_resolution_clock::now();elapsedMs = t1 - t0;
-    printf("Edge Tracking By Hysteresis Ran in %lf ms\n", elapsedMs.count());
+    // printf("Edge Tracking By Hysteresis Ran in %lf ms\n", elapsedMs.count());
+    timestamps[4] = elapsedMs.count();
 
 
     //reset start of function time
@@ -267,9 +277,11 @@ void do_serial_canny(unsigned char* outImage, unsigned char* inImage, int width,
     serialFloatArrToUnsignedChar(hysteresisOut, outImage, imgSize);
     t1 = high_resolution_clock::now();
     elapsedMs = t1 - t0;
-    printf("Float to unsigned char conversion ran in %lf ms\n", elapsedMs.count());
+    // printf("Float to unsigned char conversion ran in %lf ms\n", elapsedMs.count());
+    timestamps[5] = elapsedMs.count();
     elapsedMs = t1 - start;
-    printf("Time taken by CPU implementation %lf ms\n", elapsedMs.count());
+    // printf("Time taken by CPU implementation %lf ms\n", elapsedMs.count());
+    timestamps[6] = elapsedMs.count();
 
     free(postGaussFilter);
     free(edgeGradient);
