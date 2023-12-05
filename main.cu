@@ -227,7 +227,7 @@ void multiImageBenchmarkTests() {
 
 void videoDemo() {
     std::cout << cv::getBuildInformation() << std::endl;
-    cv::VideoCapture cap("./bad_apple.mp4");
+    cv::VideoCapture cap("./2kvid.mp4");
 
     // Check if camera opened successfully
     if(!cap.isOpened()){
@@ -236,6 +236,7 @@ void videoDemo() {
     }
 
     double* cudaBenchmarks = (double*) malloc(sizeof(double)*7);
+    int fps = (int) cap.get(cv::CAP_PROP_FPS);
     
     while(1){
     
@@ -249,6 +250,7 @@ void videoDemo() {
 
     
         cv::Mat greyImage;
+        cv::namedWindow("Edge Detect Video", cv::WINDOW_NORMAL);
         cv::cvtColor(frame, greyImage, cv::COLOR_BGR2GRAY);
         greyImage.convertTo(greyImage, CV_8U);//set pixel values to unsigned-8bit
         int w = greyImage.cols;
@@ -258,16 +260,16 @@ void videoDemo() {
         cv::Mat edgeImgCuda(h, w, CV_8UC1, cv::Scalar::all(0));  
     
         //placeholder
-        doSerialCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
-        // doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
+        // doSerialCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
+        doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
     
         // prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true);
     
-        cv::imshow("Original Video", frame);
+        // cv::imshow("Original Video", frame);
         cv::imshow("Edge Detect Video", edgeImgCuda);
     
         // Press  ESC on keyboard to exit
-        char c=(char)cv::waitKey(33);
+        char c=(char)cv::waitKey(1000/fps);
         if(c==27)
             break;
     }
