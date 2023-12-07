@@ -280,7 +280,7 @@ void doSerialCannyExtractStage(unsigned char* outImage, unsigned char* inImage, 
 
     //reset start of function time
     t0 = high_resolution_clock::now();
-    serialFloatArrToUnsignedChar(hysteresisOut, outImage, imgSize);
+    serialFloatArrToUnsignedChar(threshOut, outImage, imgSize);
     t1 = high_resolution_clock::now();
     elapsedMs = t1 - t0;
     // printf("Float to unsigned char conversion ran in %lf ms\n", elapsedMs.count());

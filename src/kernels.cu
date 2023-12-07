@@ -34,53 +34,32 @@
 
 
 /**
- *  @brief 
- *  
- *  @param f_nmsIn 
- *  @param f_threshOut 
- *  @param u32_width 
- *  @param u32_height 
- *  @param f_lowThresRatio 
- *  @param f_highThreshRatio 
+ * @brief 
+ * 
+ * @param f_nmsIn 
+ * @param f_threshOut 
+ * @param u32_width 
+ * @param u32_height 
+ * @param f_lowThreshRatio 
+ * @param f_highThreshRatio 
+ * @param f_max 
+ * @return __global__ 
  */
 __global__ void cudaDoubleThreshold(float* f_nmsIn, float* f_threshOut,
                                     U32 u32_width, U32 u32_height,
-                                    float f_lowThreshRatio, float f_highThreshRatio)
+                                    float f_lowThreshRatio, float f_highThreshRatio,
+                                    float f_max)
 {
-    float f_max = 0.0f;
-
-    // TODO parallelize
-    for (int y = 0; y < u32_height; y++) {
-        for (int x = 0; x < u32_width; x++) {
-            f_max = (f_max < f_nmsIn[y * u32_width + x]) ? f_nmsIn[y * u32_width + x] : f_max;
-        }
-    }
-
-    // maxReduction(f_nmsIn, &f_max, u32_width);
-
-    // find max again
-    // printf("cuda max %f\n", f_max);
-
-    float f_highThresh = f_max * f_highThreshRatio;
-    float f_lowThresh = f_highThresh * f_lowThreshRatio;
-
-
     U32 row = threadIdx.y  + blockIdx.y * blockDim.y;
     U32 col = threadIdx.x + blockIdx.x * blockDim.x;
 
-    if (blockIdx.x == 0 && blockIdx.y == 0)
+    if (row < u32_height && col < u32_width)
     {
-        printf("row %d col %d\n", row, col);
-    }
+        U32 idx = row * u32_width + col;
 
-    if (row > 0 && col > 0 && row < u32_height - 1 && col < u32_width)
-    {
-        U32 idx = row * col;
+        float f_highThresh = f_max * f_highThreshRatio;
+        float f_lowThresh = f_highThresh * f_lowThreshRatio;
 
-        
-        // FILE *fptr = fopen("idx.txt", "w");
-        // fprintf(fptr, "%d\n", idx);
-        // fclose(fptr);
         if (f_nmsIn[idx] >= f_highThresh)
             f_threshOut[idx] = 255;
         else if (f_nmsIn[idx] >= f_lowThresh)
@@ -88,18 +67,7 @@ __global__ void cudaDoubleThreshold(float* f_nmsIn, float* f_threshOut,
         else
             f_threshOut[idx] = 0;
     }
-
-    // if (threadID )
-
-    // python code:
-    // M, N = img.shape // i believe this is the width and height args
-    // res = np.zeros((MN, N), dtype=np.in32) // this is f_threshOut
-    //
-    // weak = np.int32(25)  // these are in the if else if of the serial
-    // strong = np.int32(255)
-
 }
-
 
 
 __global__ void maxReduction(float* arrIn, float* maxOut, unsigned int size) {

@@ -327,14 +327,12 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     if (stage == 3) {
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
+        float f_max = utilGetMax(dNmsOutput, width * height);
         //further allocations and thread configs here
-        // dim3 dblThreshold_dimGrid(16, 16, 1);
-        // dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
-        // cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, width, height, 0.05, 0.09);
-        // cudaDeviceSynchronize();
-
-        //placeholder to ensure framework functionality
-        cudaMemcpy(dThreshOut, dNmsOutput, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+        dim3 dblThreshold_dimGrid(16, 16, 1);
+        dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
+        cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, width, height, 0.05, 0.09, f_max);
+        cudaDeviceSynchronize();
     }
 
     cudaEventRecord(lEnd);

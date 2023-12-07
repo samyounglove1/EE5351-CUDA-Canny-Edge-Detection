@@ -210,10 +210,10 @@ void multiImageBenchmarkTests() {
             doSerialCanny((uint8_t*) edgeImgSerial.data, (uint8_t*) greyImage.data, serialBenchmarks, w, h);
             doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
     
-            // prettyPrintBenchmarks(tests[i], serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), first);
+            prettyPrintBenchmarks(tests[i], serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), first);
             first = false;
     
-            // cv::imshow("Original Image", greyImage);
+            cv::imshow("Original Image", greyImage);
             cv::imshow("Post Serial Image", edgeImgSerial);
             cv::imshow("Post CUDA Image", edgeImgCuda);
     
