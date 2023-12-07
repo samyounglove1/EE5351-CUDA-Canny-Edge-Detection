@@ -139,7 +139,9 @@ void serialNonMaxSuppression(float* edgeGradientIn, float* directions, float* ns
 * maximum pixel value. Pixels exceeding or equal to the high threshold should be set to a max pixel value while pixel
 * less than the low threshold are zeroed, pixels between thresholds should be set to a common lower value but still retained
 */
-void serialDoubleThreshold(float* nmsIn, float* threshOut, int width, int height, float lowThreshRatio, float highThreshRatio) {
+void serialDoubleThreshold( float* nmsIn, float* threshOut, 
+                            int width, int height, 
+                            float lowThreshRatio, float highThreshRatio) {
     //first need to find max again
     float max = 0;
     for (int y = 0; y < height; y++) {
@@ -147,6 +149,9 @@ void serialDoubleThreshold(float* nmsIn, float* threshOut, int width, int height
             max = (max < nmsIn[y * width + x]) ? nmsIn[y * width + x] : max;
         }
     }
+
+    // TODO
+    // printf("serial max %f\n", max);
 
     float highThresh = max * highThreshRatio;
     float lowThresh = highThresh * lowThreshRatio;
@@ -254,6 +259,7 @@ void doSerialCannyExtractStage(unsigned char* outImage, unsigned char* inImage, 
     timestamps[2] = elapsedMs.count();
     if (stage == 2) memcpy(extracted, nmsOutput, sizeof(float)*imgSize);
 
+    // TODO parallelize
     //double thresholding
     t0 = high_resolution_clock::now();
     float* threshOut = (float*) calloc(imgSize, sizeof(float));

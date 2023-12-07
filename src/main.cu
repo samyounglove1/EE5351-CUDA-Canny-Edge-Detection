@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
         }
 
     } else if (mode == 'd') {//extraction/injection debug mode
-        cv::Mat baseImage = cv::imread("lenna.png");
+        cv::Mat baseImage = cv::imread("./media/images/lenna.png");
         int stage = std::atoi(argv[2]);
 
         double* serialBenchmarks = (double*) malloc(sizeof(double)*7);
@@ -183,15 +183,16 @@ int main(int argc, char *argv[]) {
 }
 
 void multiImageBenchmarkTests() {
-    int numTests = 6;
+    // TODO change back
+    int numTests = 2;
     std::string tests[numTests] = {"256x256", "512x512", "1Kx1K", "2Kx2K", "4Kx4K", "4Kx6K"};
 
     double* serialBenchmarks = (double*) malloc(sizeof(double)*7);
     double* cudaBenchmarks = (double*) malloc(sizeof(double)*7);
 
     bool first = true;
-    for (int i = 0; i < numTests; i++) {
-        cv::Mat baseImage = cv::imread("images/" + tests[i] + ".jpg");
+    for (int i = 1; i < numTests; i++) {
+        cv::Mat baseImage = cv::imread("../media/images/" + tests[i] + ".jpg");
         if (baseImage.empty()) {
             printf("Failed to load image!\n");
             return;
@@ -209,14 +210,14 @@ void multiImageBenchmarkTests() {
             doSerialCanny((uint8_t*) edgeImgSerial.data, (uint8_t*) greyImage.data, serialBenchmarks, w, h);
             doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
     
-            prettyPrintBenchmarks(tests[i], serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), first);
+            // prettyPrintBenchmarks(tests[i], serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), first);
             first = false;
     
             // cv::imshow("Original Image", greyImage);
-            // cv::imshow("Post Serial Image", edgeImgSerial);
-            // cv::imshow("Post CUDA Image", edgeImgCuda);
+            cv::imshow("Post Serial Image", edgeImgSerial);
+            cv::imshow("Post CUDA Image", edgeImgCuda);
     
-            // int k = cv::waitKey(0);
+            int k = cv::waitKey(0);
     
         }
     }
@@ -227,7 +228,7 @@ void multiImageBenchmarkTests() {
 
 void videoDemo() {
     std::cout << cv::getBuildInformation() << std::endl;
-    cv::VideoCapture cap("./2kvid.mp4");
+    cv::VideoCapture cap("./media/videos/2kvid.mp4");
 
     // Check if camera opened successfully
     if(!cap.isOpened()){

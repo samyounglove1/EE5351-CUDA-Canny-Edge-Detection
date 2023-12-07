@@ -1,5 +1,6 @@
 #include <iostream>
 #include <stdio.h>
+#include "../inc/kernels.h"
 
 //forward declare functions
 float utilGetMax(float* arr, unsigned int size);
@@ -182,22 +183,13 @@ __global__ void nonMaximumSupression(float* inGradient, float* inAngle, float* o
 *
 */
 
-//may need to optimize dimensioning for this operation
-#define CONVERT_BLOCK_SIZE 512
-
-__global__ void floatArrToUnsignedChar(float* inImage, unsigned char* outImage, int imgSize) {
-    int t = threadIdx.x;
-    int id = blockIdx.x * CONVERT_BLOCK_SIZE + t;//will use stride behavior like in histogramming
-    unsigned int stride = blockDim.x * gridDim.x;
-
-    while(id < imgSize) {
-        outImage[id] = (unsigned char) inImage[id];
-        id += stride;
-    }
-}
 
 
-void doCudaCannyInjectStage(unsigned char* outImage, unsigned char* inImage, double* timestamps, int width, int height, int stage, float* injection) {
+
+void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage, 
+                                double* timestamps, 
+                                int width, int height, int stage, 
+                                float* injection) {
     //TODO timing event setup
     cudaEvent_t start, lStart, lEnd;//start will overarc the whole thing
     float time = 0;
@@ -323,6 +315,7 @@ void doCudaCannyInjectStage(unsigned char* outImage, unsigned char* inImage, dou
     cudaFree(dEdgeGradient);
     cudaFree(dDirections);
 
+    // START step 4
     //step 4 double thresholding
     cudaEventRecord(start);
     cudaEventRecord(lStart);
@@ -335,7 +328,11 @@ void doCudaCannyInjectStage(unsigned char* outImage, unsigned char* inImage, dou
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
         //further allocations and thread configs here
-        
+        // dim3 dblThreshold_dimGrid(16, 16, 1);
+        // dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
+        // cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, width, height, 0.05, 0.09);
+        // cudaDeviceSynchronize();
+
         //placeholder to ensure framework functionality
         cudaMemcpy(dThreshOut, dNmsOutput, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
     }
@@ -346,6 +343,7 @@ void doCudaCannyInjectStage(unsigned char* outImage, unsigned char* inImage, dou
     timestamps[3] = time;//store to timestamp array
 
     cudaFree(dNmsOutput);
+    // END step 4
 
     //step 5 edge tracking via hysterersis
     cudaEventRecord(start);
@@ -398,27 +396,7 @@ void doCudaCannyInjectStage(unsigned char* outImage, unsigned char* inImage, dou
 }
 
 
-#define maxReduceBlockSize 256
-__global__ void maxReduction(float* arrIn, float* maxOut, unsigned int size) {
-    __shared__ float data[maxReduceBlockSize*2];
 
-    unsigned int t = threadIdx.x;
-    unsigned int start = 2*blockDim.x*blockIdx.x;
-
-    //preload 2 elements per thread
-    data[t] = (start + t < size) ? arrIn[start + t] : 0;
-    data[t + maxReduceBlockSize] = (start + maxReduceBlockSize + t < size) ? arrIn[start + maxReduceBlockSize + t] : 0;
-
-    for (unsigned int stride = maxReduceBlockSize; stride >= 1; stride >>=1) {
-        __syncthreads();
-        if (t < stride)
-            if (data[t] < data[t + stride])
-                data[t] = data[t + stride];
-    }
-
-    if (t == 0) //last active thread will be holding max value, should write it back
-        maxOut[blockIdx.x] = data[t];
-}
 
 
 float utilGetMax(float* arr, unsigned int size) {
