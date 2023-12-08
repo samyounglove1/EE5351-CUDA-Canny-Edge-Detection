@@ -303,7 +303,8 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     } else if (stage < 2) {
         dim3 blockSizeNonMax(NON_MAX_BLOCK_SIZE, NON_MAX_BLOCK_SIZE);
         dim3 gridSizeNonMax(ceil((float) width / NON_MAX_BLOCK_SIZE), ceil((float) height / NON_MAX_BLOCK_SIZE));
-        nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirections, dNmsOutput, width, height);
+// FAULT
+nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirections, dNmsOutput, width, height);
         cudaDeviceSynchronize();
     }
 
@@ -340,9 +341,10 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaEventElapsedTime(&time, lStart, lEnd);
     timestamps[3] = time;//store to timestamp array
 
-    cudaFree(dNmsOutput);
+// FAULT
+// cudaFree(dNmsOutput);
 
-    // START step 5 edge tracking via hysterersis
+    // step 5 edge tracking via hysterersis
     cudaEventRecord(start);
     cudaEventRecord(lStart);
 
@@ -357,7 +359,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
         cudaHysteresis<<<hysteresis_dimGrid, hysteresis_dimBlock>>>(dThreshOut, dHysteresisOut, width, height);
     }
 
-    // END step 5
     cudaEventRecord(lEnd);
     cudaEventSynchronize(lEnd);
     cudaEventElapsedTime(&time, lStart, lEnd);
@@ -372,7 +373,10 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     unsigned char* dImageOut;
     cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
     unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
-    floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
+    
+    // FAULT
+    // floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
+floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dNmsOutput, dImageOut, imgSize);
     
     cudaEventRecord(lEnd);
     cudaEventSynchronize(lEnd);
@@ -392,6 +396,8 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     //final free operations, subject to change
     cudaFree(dImageOut);
 
+    // FAULT
+cudaFree(dNmsOutput);
     cudaEventDestroy(start);
     cudaEventDestroy(lStart);
     cudaEventDestroy(lEnd);
