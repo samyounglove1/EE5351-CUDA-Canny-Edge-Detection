@@ -34,7 +34,7 @@ __global__ void maxReduction(float* arrIn, float* maxOut, unsigned int size) {
             if (data[t] < data[t + stride])
                 data[t] = data[t + stride];
     }
-
+    __syncthreads();
     if (t == 0) //last active thread will be holding max value, should write it back
         maxOut[blockIdx.x] = data[t];
 }

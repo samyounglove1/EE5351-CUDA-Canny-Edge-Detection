@@ -29,6 +29,68 @@ float utilGetMax(float* arr, U32 size)
     return res;
 }
 
+__global__ void maxReduction2(float* arr, U32 size, float* res)
+{
+    
+    if (threadIdx.x == 0 && blockIdx.x == 0)
+    {
+        printf("%f\n", arr[128]);
+        float max = 0.0f;
+        for (int i = 0; i < size; ++i)
+        {
+            if (arr[i] > max)
+            {
+                printf("%d %f ", i, arr[i]);
+                max = arr[i];
+            }
+            __syncthreads();
+        }
+        printf("\n\nmax: %f\n", max);
+    }
+    __syncthreads();
+}
+
+float utilGetMax_2(float* arr, U32 size, float *dNmsOutput) 
+{
+    float max = 0.0f;
+    for (int i = 0; i < size; ++i)
+    {
+        if (arr[i] > max)
+        {
+            max = arr[i];
+        }
+    }
+    printf("\nutilGetMax_2 serial max: %f\n", max);
+
+    float* maxOut;
+    cudaMalloc(&maxOut, sizeof(float));
+    maxReduction2<<<1, 1>>>(dNmsOutput, size, maxOut);
+    cudaDeviceSynchronize();
+
+    
+    
+    // //arr should already be a device array
+    // float* maxOut;//allocate array to hold resulting max values
+    // unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
+    // printf("size: %d divSize: %d\n", size, divSize);
+    // cudaMalloc(&maxOut, sizeof(float)*divSize);
+
+    // maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
+    // while (divSize > 1) {
+    //     cudaDeviceSynchronize();
+    //     unsigned int tempDivSize = divSize;
+    //     divSize = ceil((float) divSize / (maxReduceBlockSize * 2));
+    //     maxReduction<<<divSize, maxReduceBlockSize>>>(maxOut, maxOut, tempDivSize);
+    //     printf("tempDivSize: %d\n", tempDivSize);
+    // }
+    // cudaDeviceSynchronize();
+    float res = 0;
+    cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(maxOut);
+    // printf("res %f\n", res);
+    return res;
+}
+
 
 // __constant__'s have static scope, must gaussianFilter() and gradientCalculation() must stay in this file
 __constant__ unsigned char G_Filter_Kernel[GAUSS_KERNEL_SIZE*GAUSS_KERNEL_SIZE];
@@ -259,7 +321,9 @@ nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirect
     if (stage == 3) {
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
-        float f_max = utilGetMax(dNmsOutput, width * height);
+        float *h_nms = (float*)malloc(width * height * sizeof(float));
+        cudaMemcpy(h_nms, dNmsOutput, width * height * sizeof(float), cudaMemcpyDeviceToHost);
+        float f_max = utilGetMax_2(h_nms, width * height, dNmsOutput);
         printf("cuda max: %f\n", f_max);
         // f_max = 149.156815;
         // dim3 dblThreshold_dimGrid(16, 16, 1);
