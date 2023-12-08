@@ -31,6 +31,7 @@ void videoDemo();
 //simple function to compare OpenCV mat/image equivalency
 bool equal(const cv::Mat & a, const cv::Mat & b)
 {
+    // std::cout << "pixel values " << (int) a.at<int>(0, 0) << " " << (int) b.at<int>(0, 0) << std::endl;
     if ( (a.rows != b.rows) || (a.cols != b.cols) )
         return false;
     cv::Scalar s = sum( a - b );
@@ -38,7 +39,7 @@ bool equal(const cv::Mat & a, const cv::Mat & b)
 }
 
 
-void prettyPrintBenchmarks(std::string name, double* serialBenchmarks, double* cudaBenchmarks, bool equal, bool first) {
+void prettyPrintBenchmarks(std::string name, double* serialBenchmarks, double* cudaBenchmarks, bool equal, bool first, bool parallelOnly) {
     if (first) {
         std::cout << std::right << std::setw(9) << std::setfill(' ') << "Image"  << std::setw(3) << " | ";
         std::cout << std::right << std::setw(9) << std::setfill(' ') << "Impl"   << std::setw(3) << " | ";
@@ -53,17 +54,18 @@ void prettyPrintBenchmarks(std::string name, double* serialBenchmarks, double* c
     }
 
     //print stats for serial
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << name << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << "Serial" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[0] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[1] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[2] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[3] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[4] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[5] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[6] << "ms" << std::setw(3) << " | ";
-    std::cout << std::right << std::setw(12) << std::setfill(' ') << ((equal) ? "PASSED" : "FAILED") << std::endl;
-
+    if (!parallelOnly) {
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << name << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << "Serial" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[0] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[1] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[2] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[3] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[4] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[5] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << serialBenchmarks[6] << "ms" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(12) << std::setfill(' ') << ((equal) ? "PASSED" : "FAILED") << std::endl;
+    }
     //print stats for parallel
     std::cout << std::right << std::setw(9) << std::setfill(' ') << name  << std::setw(3) << " | ";
     std::cout << std::right << std::setw(9) << std::setfill(' ') << "Parallel"  << std::setw(3) << " | ";
@@ -74,8 +76,11 @@ void prettyPrintBenchmarks(std::string name, double* serialBenchmarks, double* c
     std::cout << std::right << std::setw(9) << std::setfill(' ') << cudaBenchmarks[4] << "ms" << std::setw(3) << " | ";
     std::cout << std::right << std::setw(9) << std::setfill(' ') << cudaBenchmarks[5] << "ms" << std::setw(3) << " | ";
     std::cout << std::right << std::setw(9) << std::setfill(' ') << cudaBenchmarks[6] << "ms" << std::setw(3) << " | ";
-    float speedup = serialBenchmarks[6] / cudaBenchmarks[6];
-    std::cout << std::right << std::setw(12) << std::setfill(' ') << std::to_string(speedup) + 'X' << std::endl;
+    if (!parallelOnly) {
+        float speedup = serialBenchmarks[6] / cudaBenchmarks[6];
+        std::cout << std::right << std::setw(12) << std::setfill(' ') << std::to_string(speedup) + 'X';
+    }
+    std::cout << std::endl;
 }
 
 
@@ -133,7 +138,7 @@ int main(int argc, char *argv[]) {
             doSerialCanny((uint8_t*) edgeImgSerial.data, (uint8_t*) greyImage.data, serialBenchmarks, w, h);
             doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
 
-            prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true);
+            prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true, false);
 
             cv::imshow("Original Image", greyImage);
             cv::imshow("Post Serial Image", edgeImgSerial);
@@ -146,7 +151,7 @@ int main(int argc, char *argv[]) {
         }
 
     } else if (mode == 'd') {//extraction/injection debug mode
-        cv::Mat baseImage = cv::imread("./media/images/lenna.png");
+        cv::Mat baseImage = cv::imread("../media/images/256x256.jpg");
         int stage = std::atoi(argv[2]);
 
         double* serialBenchmarks = (double*) malloc(sizeof(double)*7);
@@ -167,7 +172,7 @@ int main(int argc, char *argv[]) {
         doSerialCannyExtractStage((uint8_t*) edgeImgSerial.data, (uint8_t*) greyImage.data, serialBenchmarks, w, h, stage, injection);
         doCudaCannyInjectStage((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h, stage, injection);
 
-        prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true);
+        prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true, false);
 
         cv::imshow("Original Image", greyImage);
         cv::imshow("Post Serial Image", edgeImgSerial);
@@ -183,9 +188,8 @@ int main(int argc, char *argv[]) {
 }
 
 void multiImageBenchmarkTests() {
-    int numTests = 7;
-    // TODO remove "256x256"
-    std::string tests[numTests] = {"waltuh", "512x512", "dog_flag", "1Kx1K", "2Kx2K", "4Kx4K", "4Kx6K"};
+    int numTests = 6;
+    std::string tests[numTests] = {"256x256", "512x512", "1Kx1K", "2Kx2K", "4Kx4K", "4Kx6K"};
 
     double* serialBenchmarks = (double*) malloc(sizeof(double)*7);
     double* cudaBenchmarks = (double*) malloc(sizeof(double)*7);
@@ -210,14 +214,14 @@ void multiImageBenchmarkTests() {
             doSerialCanny((uint8_t*) edgeImgSerial.data, (uint8_t*) greyImage.data, serialBenchmarks, w, h);
             doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
     
-            prettyPrintBenchmarks(tests[i], serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), first);
+            prettyPrintBenchmarks(tests[i], serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), first, false);
             first = false;
     
-            cv::imshow("Original Image", greyImage);
-            cv::imshow("Post Serial Image", edgeImgSerial);
-            cv::imshow("Post CUDA Image", edgeImgCuda);
+            // cv::imshow("Original Image", greyImage);
+            // cv::imshow("Post Serial Image", edgeImgSerial);
+            // cv::imshow("Post CUDA Image", edgeImgCuda);
     
-            int k = cv::waitKey(0);
+            // int k = cv::waitKey(0);
     
         }
     }
@@ -228,7 +232,7 @@ void multiImageBenchmarkTests() {
 
 void videoDemo() {
     std::cout << cv::getBuildInformation() << std::endl;
-    cv::VideoCapture cap("./media/videos/2kvid.mp4");
+    cv::VideoCapture cap("../media/videos/2kvid.mp4");
 
     // Check if camera opened successfully
     if(!cap.isOpened()){
@@ -238,6 +242,13 @@ void videoDemo() {
 
     double* cudaBenchmarks = (double*) malloc(sizeof(double)*7);
     int fps = (int) cap.get(cv::CAP_PROP_FPS);
+    
+    bool first = true;
+    int frameNum = 1;
+
+    cv::namedWindow("Edge Detect Video", cv::WINDOW_NORMAL);
+    cv::namedWindow("Base Video", cv::WINDOW_NORMAL);
+    cv::waitKey(0);
     
     while(1){
     
@@ -251,7 +262,6 @@ void videoDemo() {
 
     
         cv::Mat greyImage;
-        cv::namedWindow("Edge Detect Video", cv::WINDOW_NORMAL);
         cv::cvtColor(frame, greyImage, cv::COLOR_BGR2GRAY);
         greyImage.convertTo(greyImage, CV_8U);//set pixel values to unsigned-8bit
         int w = greyImage.cols;
@@ -264,9 +274,11 @@ void videoDemo() {
         // doSerialCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
         doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
     
-        // prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true);
+        prettyPrintBenchmarks(std::to_string(frameNum), nullptr, cudaBenchmarks, true, first, true);
+        first = false;
+        frameNum++;
     
-        // cv::imshow("Original Video", frame);
+        cv::imshow("Base Video", frame);
         cv::imshow("Edge Detect Video", edgeImgCuda);
     
         // Press  ESC on keyboard to exit

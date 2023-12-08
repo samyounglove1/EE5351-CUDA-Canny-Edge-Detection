@@ -13,7 +13,6 @@ float utilGetMax(float* arr, U32 size)
     unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
 
     cudaMalloc(&maxOut, sizeof(float)*divSize);
-
     maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
     while (divSize > 1) {
         cudaDeviceSynchronize();
@@ -121,7 +120,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
                                 double* timestamps, 
                                 int width, int height, int stage, 
                                 float* injection) {
-    //TODO timing event setup
     cudaEvent_t start, lStart, lEnd;//start will overarc the whole thing
     float time = 0;
 
@@ -149,8 +147,8 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
 
     cudaMalloc(&dImageIn, sizeof(unsigned char)*imgSize);
     cudaMalloc(&dGaussFilterOut, sizeof(float)*imgSize);
-    cudaMemset(&dImageIn, 0, sizeof(unsigned char)*imgSize);
-    cudaMemset(&dGaussFilterOut, 0.0f, sizeof(float)*imgSize);
+    // cudaMemset(&dImageIn, 0, sizeof(unsigned char)*imgSize);
+    // cudaMemset(&dGaussFilterOut, 0.0f, sizeof(float)*imgSize);
 
     if (stage == 0) {
         cudaMemcpy(dGaussFilterOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);//force override
@@ -186,8 +184,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     float* dDirections;
     cudaMalloc(&dEdgeGradient, sizeof(float)*imgSize);
     cudaMalloc(&dDirections, sizeof(float)*imgSize);
-    cudaMemset(&dEdgeGradient, 0.0f, sizeof(float)*imgSize);
-    cudaMemset(&dDirections, 0.0f, sizeof(float)*imgSize);
     //declare sobel filters as const memory
     if (stage == 1) { //directly inject step 2 results from serial instead of executing this in parallel
         cudaMemcpy(dEdgeGradient, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
@@ -232,7 +228,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     //allocations
     float* dNmsOutput;
     cudaMalloc(&dNmsOutput, sizeof(float)*imgSize);
-    cudaMemset(&dNmsOutput, 0.0f, sizeof(float) * imgSize);
     if (stage == 2) {
         cudaMemcpy(dNmsOutput, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 2) {
@@ -258,14 +253,13 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     //allocations
     float* dThreshOut;
     cudaMalloc(&dThreshOut, sizeof(float)*imgSize);
-    cudaMemset(&dThreshOut, 0.0f, sizeof(float) * imgSize);
     if (stage == 3) {
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
         float f_max = utilGetMax(dNmsOutput, width * height);
         
         // TODO remove
-        printf("cuda f_max: %f\n", f_max);
+        // printf("cuda f_max: %f\n", f_max);
 
         dim3 dblThreshold_dimBlock(16, 16, 1);
         dim3 dblThreshold_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
@@ -279,13 +273,14 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaEventElapsedTime(&time, lStart, lEnd);
     timestamps[3] = time;//store to timestamp array
 
+    cudaFree(dNmsOutput);
+
     // step 5 edge tracking via hysterersis
     cudaEventRecord(start);
     cudaEventRecord(lStart);
 
     float* dHysteresisOut;
     cudaMalloc(&dHysteresisOut, sizeof(float)*imgSize);
-    cudaMemset(&dHysteresisOut, 0.0f, sizeof(float) * imgSize);
     //further allocations and thread configs here
     if (stage == 4) {
         cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
@@ -308,7 +303,7 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaEventRecord(lStart);
     unsigned char* dImageOut;
     cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
-    cudaMemset(&dImageOut, 0, sizeof(unsigned char) * imgSize);
+    // cudaMemset(&dImageOut, 0, sizeof(unsigned char) * imgSize);
     unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
     floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
     

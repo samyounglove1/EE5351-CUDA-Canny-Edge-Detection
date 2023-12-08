@@ -64,6 +64,7 @@ __global__ void nonMaximumSupression(float* inGradient, float* inAngle, float* o
     int row = blockIdx.y * NON_MAX_BLOCK_SIZE + ty;
     int col = blockIdx.x * NON_MAX_BLOCK_SIZE + tx;
 
+    outSupressedGradient[row * width + col] = 0;
     if (row < height - 1 && row > 0 && col > 0 && col < width - 1) {
         float pi = M_PI;
         // Gradient values of pixels directly in front of and behind this thread's pixel along angle
@@ -77,30 +78,30 @@ __global__ void nonMaximumSupression(float* inGradient, float* inAngle, float* o
         }
         
         // Prevent edge pixels from grabbing out of bounds
-        int row_plus  = (row == height - 1) ? row : row + 1;
-        int row_minus = (row == 0)      ? row : row - 1;
-        int col_plus  = (col == width - 1)  ? col : col + 1;
-        int col_minus = (col == 0)      ? col : col - 1;
+        // int row_plus  = (row == height - 1) ? row : row + 1;
+        // int row_minus = (row == 0)      ? row : row - 1;
+        // int col_plus  = (col == width - 1)  ? col : col + 1;
+        // int col_minus = (col == 0)      ? col : col - 1;
 
         // 0 degrees
-        if (angle < 22.5 || angle >= 157.5) {
-            q = inGradient[row * width + col_plus ];
-            r = inGradient[row * width + col_minus];
+        if ((0 <= angle && angle < 22.5) || (157.5 <= angle && angle <= 180)) {
+            q = inGradient[row * width + col + 1];
+            r = inGradient[row * width + col - 1];
         }
         // 45 degrees
-        else if (angle < 67.5) {
-            q = inGradient[row_plus  * width + col_minus];
-            r = inGradient[row_minus * width + col_plus ];
+        else if (22.5 <= angle && angle < 67.5) {
+            q = inGradient[(row + 1) * width + col - 1];
+            r = inGradient[(row - 1) * width + col + 1];
         }
         // 90 degrees
-        else if (angle < 112.5) {
-            q = inGradient[row_plus  * width + col];
-            r = inGradient[row_minus * width + col];
+        else if (67.5 <= angle && angle < 112.5) {
+            q = inGradient[(row + 1) * width + col];
+            r = inGradient[(row - 1) * width + col];
         }
         // 135 degrees
-        else {
-            q = inGradient[row_minus * width + col_minus];
-            r = inGradient[row_plus  * width + col_plus ];
+        else if (112.5 <= angle && angle < 157.5) {
+            q = inGradient[(row + 1) * width + col + 1];
+            r = inGradient[(row - 1) * width + col - 1];
         }
 
         // If pixel is not the max of its two neighbors along angle, set to 0
