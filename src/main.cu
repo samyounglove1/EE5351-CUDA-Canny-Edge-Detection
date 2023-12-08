@@ -183,8 +183,7 @@ int main(int argc, char *argv[]) {
 }
 
 void multiImageBenchmarkTests() {
-    // TODO change back
-    int numTests = 2;
+    int numTests = 3;
     std::string tests[numTests] = {"256x256", "512x512", "1Kx1K", "2Kx2K", "4Kx4K", "4Kx6K"};
 
     double* serialBenchmarks = (double*) malloc(sizeof(double)*7);
@@ -192,7 +191,7 @@ void multiImageBenchmarkTests() {
 
     bool first = true;
     for (int i = 1; i < numTests; i++) {
-        cv::Mat baseImage = cv::imread("../media/images/" + tests[i] + ".jpg");
+        cv::Mat baseImage = cv::imread("/home/adanciak/school/EE5351-CUDA-Canny-Edge-Detection/media/images/" + tests[i] + ".jpg");
         if (baseImage.empty()) {
             printf("Failed to load image!\n");
             return;
