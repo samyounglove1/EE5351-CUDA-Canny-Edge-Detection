@@ -1,17 +1,40 @@
 #include <iostream>
 #include <stdio.h>
-#include "../inc/kernels.h"
+#include "../inc/kernels.cuh"
 
-//forward declare functions
-float utilGetMax(float* arr, unsigned int size);
 
-#define GAUSS_KERNEL_SIZE 5
-#define GAUSS_KERNEL_SUM 159
-#define GKS_DIV_2 (GAUSS_KERNEL_SIZE >> 1)
-#define GAUSS_TILE_SIZE 12
-#define GAUSS_BLOCK_SIZE (GAUSS_TILE_SIZE + GAUSS_KERNEL_SIZE - 1)//yields 256 thread 2D blocks
+float utilGetMax(float* arr, U32 size);
 
+
+float utilGetMax(float* arr, U32 size) 
+{
+    //arr should already be a device array
+    float* maxOut;//allocate array to hold resulting max values
+    unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
+    // printf("size: %d divSize: %d\n", size, divSize);
+    cudaMalloc(&maxOut, sizeof(float)*divSize);
+
+    maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
+    while (divSize > 1) {
+        cudaDeviceSynchronize();
+        unsigned int tempDivSize = divSize;
+        divSize = ceil((float) divSize / (maxReduceBlockSize * 2));
+        maxReduction<<<divSize, maxReduceBlockSize>>>(maxOut, maxOut, tempDivSize);
+    }
+    cudaDeviceSynchronize();
+    float res = 0;
+    cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(maxOut);
+    // printf("res %f\n", res);
+    return res;
+}
+
+
+// __constant__'s have static scope, must gaussianFilter() and gradientCalculation() must stay in this file
 __constant__ unsigned char G_Filter_Kernel[GAUSS_KERNEL_SIZE*GAUSS_KERNEL_SIZE];
+__constant__ float Sobel_Kernel_X[GRADIENT_KERNEL_SIZE*GRADIENT_KERNEL_SIZE];
+__constant__ float Sobel_Kernel_Y[GRADIENT_KERNEL_SIZE*GRADIENT_KERNEL_SIZE];
+
 
 __global__ void gaussianFilter(unsigned char* inImage, float* outImage, int width, int height){
     __shared__ unsigned char ins[GAUSS_BLOCK_SIZE][GAUSS_BLOCK_SIZE];
@@ -50,12 +73,7 @@ __global__ void gaussianFilter(unsigned char* inImage, float* outImage, int widt
 }
 
 
-#define GRADIENT_KERNEL_SIZE 3
-#define GRADIENT_TILE_SIZE 14
-#define GRADIENT_BLOCK_SIZE (GRADIENT_TILE_SIZE + GRADIENT_KERNEL_SIZE - 1)
 
-__constant__ float Sobel_Kernel_X[GRADIENT_KERNEL_SIZE*GRADIENT_KERNEL_SIZE];
-__constant__ float Sobel_Kernel_Y[GRADIENT_KERNEL_SIZE*GRADIENT_KERNEL_SIZE];
 
 __global__ void gradientCalculation(float* inImage, float* outGradient, float* outSlope, int width, int height) {
     __shared__ float ins[GRADIENT_BLOCK_SIZE][GRADIENT_BLOCK_SIZE];
@@ -96,93 +114,6 @@ __global__ void gradientCalculation(float* inImage, float* outGradient, float* o
         }
     }
 }
-
-
-#define GRADIENT_NORM_BLOCK_SIZE 16
-
-__global__ void gradientNormalize(float* gradient, float maxGradient, int width, int height) {
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-    int row = blockIdx.y * GRADIENT_NORM_BLOCK_SIZE + ty;
-    int col = blockIdx.x * GRADIENT_NORM_BLOCK_SIZE + tx;
-
-    if (row < height && col < width) {
-        gradient[row * width + col] = gradient[row * width + col] / maxGradient * 255;
-    }
-}
-
-
-#define NON_MAX_BLOCK_SIZE 16
-
-__global__ void nonMaximumSupression(float* inGradient, float* inAngle, float* outSupressedGradient, int width, int height) {
-    // Could use shared memory here in the future, benefits would be minimal but would still be benefits.
-
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-    int row = blockIdx.y * NON_MAX_BLOCK_SIZE + ty;
-    int col = blockIdx.x * NON_MAX_BLOCK_SIZE + tx;
-
-    if (row < height - 1 && row > 0 && col > 0 && col < width - 1) {
-        float pi = 3.141593;
-        // Gradient values of pixels directly in front of and behind this thread's pixel along angle
-        int q = 255, r = 255;
-
-        // Convert from radians to degrees
-        float angle = inAngle[row * width + col];
-        angle *= (180 / pi);
-        if (angle < 0) {
-            angle += 180;
-        }
-        
-        // Prevent edge pixels from grabbing out of bounds
-        int row_plus  = (row == height) ? row : row + 1;
-        int row_minus = (row == 0)      ? row : row - 1;
-        int col_plus  = (col == width)  ? col : col + 1;
-        int col_minus = (col == 0)      ? col : col - 1;
-
-        // 0 degrees
-        if (angle < 22.5 || angle >= 157.5) {
-            q = inGradient[row * width + col_plus ];
-            r = inGradient[row * width + col_minus];
-        }
-        // 45 degrees
-        else if (angle < 67.5) {
-            q = inGradient[row_plus  * width + col_minus];
-            r = inGradient[row_minus * width + col_plus ];
-        }
-        // 90 degrees
-        else if (angle < 112.5) {
-            q = inGradient[row_plus  * width + col];
-            r = inGradient[row_minus * width + col];
-        }
-        // 135 degrees
-        else {
-            q = inGradient[row_minus * width + col_minus];
-            r = inGradient[row_plus  * width + col_plus ];
-        }
-
-        // If pixel is not the max of its two neighbors along angle, set to 0
-        float gradient = inGradient[row * width + col];
-        if (gradient >= q && gradient >= r) {
-            outSupressedGradient[row * width + col] = gradient;
-        }
-        else {
-            outSupressedGradient[row * width + col] = 0.0;
-        }
-    }
-}
-
-//room for later kernel functions, try to keep macro definitions for each function above def for said function
-/**
-*
-*
-*   PUT CODE IN THIS AREA TO KEEP THINGS ORDERED!!!
-*
-*
-*/
-
 
 
 
@@ -276,6 +207,7 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
         cudaDeviceSynchronize();
 
         float maxGradient = utilGetMax(dEdgeGradient, imgSize);
+        printf("cuda maxGradient: %f\n", maxGradient);
 
         dim3 blockSizeGradNorm(GRADIENT_NORM_BLOCK_SIZE, GRADIENT_NORM_BLOCK_SIZE);
         dim3 gridSizeGradNorm(ceil((float) width / GRADIENT_NORM_BLOCK_SIZE), ceil((float) height / GRADIENT_NORM_BLOCK_SIZE));
@@ -327,9 +259,12 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
         float f_max = utilGetMax(dNmsOutput, width * height);
-        
-        dim3 dblThreshold_dimGrid(16, 16, 1);
-        dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
+        printf("cuda max: %f\n", f_max);
+        // f_max = 149.156815;
+        // dim3 dblThreshold_dimGrid(16, 16, 1);
+        dim3 dblThreshold_dimBlock(16, 16, 1);
+        dim3 dblThreshold_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
+        // dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
 
         cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, 0.05, 0.09, width, height, f_max);
         cudaDeviceSynchronize();
@@ -352,8 +287,8 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     if (stage == 4) {
         cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
     } else if (stage < 4) {
-        dim3 hysteresis_dimGrid(16, 16, 1);
-        dim3 hysteresis_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
+        dim3 hysteresis_dimBlock(16, 16, 1);
+        dim3 hysteresis_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
         cudaHysteresis<<<hysteresis_dimGrid, hysteresis_dimBlock>>>(dThreshOut, dHysteresisOut, width, height);
     }
 
@@ -372,7 +307,7 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     unsigned char* dImageOut;
     cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
     unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
-    floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
+floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
     
     cudaEventRecord(lEnd);
     cudaEventSynchronize(lEnd);
@@ -391,33 +326,9 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
 
     //final free operations, subject to change
     cudaFree(dImageOut);
-
+    // cudaFree(dThreshOut);
     cudaEventDestroy(start);
     cudaEventDestroy(lStart);
     cudaEventDestroy(lEnd);
 }
 
-
-
-
-
-float utilGetMax(float* arr, unsigned int size) {
-    //arr should already be a device array
-    float* maxOut;//allocate array to hold resulting max values
-    unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
-    cudaMalloc(&maxOut, sizeof(float)*divSize);
-
-    maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
-    while (divSize > 1) {
-        cudaDeviceSynchronize();
-        unsigned int tempDivSize = divSize;
-        divSize = ceil((float) divSize / (maxReduceBlockSize * 2));
-        maxReduction<<<divSize, maxReduceBlockSize>>>(maxOut, maxOut, tempDivSize);
-    }
-    cudaDeviceSynchronize();
-    float res = 0;
-    cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(maxOut);
-    
-    return res;
-}

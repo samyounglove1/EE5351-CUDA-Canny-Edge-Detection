@@ -82,6 +82,7 @@ void serialSobelFilter(float* imageIn, float* edgeGradient, float* direction, in
                 max = edgeGradient[id];
         }
     }
+    printf("serial max gradient: %f\n", max);
 
     //normalize edgeGradient values
     for (int y = 0; y < height; y++) {
@@ -117,7 +118,7 @@ void serialNonMaxSuppression(float* edgeGradientIn, float* directions, float* ns
                 r = edgeGradientIn[(y - 1) * width + x + 1];
             } else if (67.5 <= angle && angle < 112.5) { //up
                 q = edgeGradientIn[(y + 1) * width + x];
-                r = edgeGradientIn[(y - 1) * width + x - 1];
+                r = edgeGradientIn[(y - 1) * width + x];
             } else if (112.5 <= angle && angle < 157.5) { //up-left
                 q = edgeGradientIn[(y + 1) * width + x + 1];
                 r = edgeGradientIn[(y - 1) * width + x - 1];
@@ -150,8 +151,7 @@ void serialDoubleThreshold( float* nmsIn, float* threshOut,
         }
     }
 
-    // TODO
-    printf("serial max %f\n", max);
+    printf("serial max: %f\n", max);
 
     float highThresh = max * highThreshRatio;
     float lowThresh = highThresh * lowThreshRatio;
@@ -259,7 +259,6 @@ void doSerialCannyExtractStage(unsigned char* outImage, unsigned char* inImage, 
     timestamps[2] = elapsedMs.count();
     if (stage == 2) memcpy(extracted, nmsOutput, sizeof(float)*imgSize);
 
-    // TODO parallelize
     //double thresholding
     t0 = high_resolution_clock::now();
     float* threshOut = (float*) calloc(imgSize, sizeof(float));
@@ -280,7 +279,7 @@ void doSerialCannyExtractStage(unsigned char* outImage, unsigned char* inImage, 
 
     //reset start of function time
     t0 = high_resolution_clock::now();
-    serialFloatArrToUnsignedChar(threshOut, outImage, imgSize);
+    serialFloatArrToUnsignedChar(hysteresisOut, outImage, imgSize);
     t1 = high_resolution_clock::now();
     elapsedMs = t1 - t0;
     // printf("Float to unsigned char conversion ran in %lf ms\n", elapsedMs.count());
