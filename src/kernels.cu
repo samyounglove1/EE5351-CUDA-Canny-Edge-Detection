@@ -1,64 +1,22 @@
 #include "../inc/kernels.h"
 
-// serial for reference
-
-// /* double threshold takes the result of the previous step and better defines 2 strengths of edges, it does so using
-// * provided high and low threshold ratios (high thresh should still be relatively low) and represent percentages of the
-// * maximum pixel value. Pixels exceeding or equal to the high threshold should be set to a max pixel value while pixel
-// * less than the low threshold are zeroed, pixels between thresholds should be set to a common lower value but still retained
-// */
-// void serialDoubleThreshold(float* nmsIn, float* threshOut, int width, int height, float lowThreshRatio, float highThreshRatio) {
-//     //first need to find max again
-//     float max = 0;
-//     for (int y = 0; y < height; y++) {
-//         for (int x = 0; x < width; x++) {
-//             max = (max < nmsIn[y * width + x]) ? nmsIn[y * width + x] : max;
-//         }
-//     }
-
-//     float highThresh = max * highThreshRatio;
-//     float lowThresh = highThresh * lowThreshRatio;
-
-//     for (int y = 0; y < height; y++) {
-//         for (int x = 0; x < width; x++) {
-//             unsigned int id = y * width + x;
-//             if (nmsIn[id] >= highThresh)
-//                 threshOut[id] = 255;
-//             else if (nmsIn[id] >= lowThresh) //above low thresh and under high due to previous IF
-//                 threshOut[id] = 25;
-//             else
-//                 threshOut[id] = 0;
-//         }
-//     }
-// }
 
 
-/**
- * @brief 
- * 
- * @param f_nmsIn 
- * @param f_threshOut 
- * @param u32_width 
- * @param u32_height 
- * @param f_lowThreshRatio 
- * @param f_highThreshRatio 
- * @param f_max 
- * @return __global__ 
- */
+
+
 __global__ void cudaDoubleThreshold(float* f_nmsIn, float* f_threshOut,
-                                    U32 u32_width, U32 u32_height,
                                     float f_lowThreshRatio, float f_highThreshRatio,
-                                    float f_max)
+                                    U32 u32_width, U32 u32_height, float f_max)
 {
     U32 row = threadIdx.y  + blockIdx.y * blockDim.y;
     U32 col = threadIdx.x + blockIdx.x * blockDim.x;
 
-    if (row < u32_height && col < u32_width)
+    if (col < u32_width && row < u32_height)
     {
-        U32 idx = row * u32_width + col;
-
         float f_highThresh = f_max * f_highThreshRatio;
         float f_lowThresh = f_highThresh * f_lowThreshRatio;
+
+        U32 idx = row * u32_width + col;
 
         if (f_nmsIn[idx] >= f_highThresh)
             f_threshOut[idx] = 255;
@@ -67,6 +25,29 @@ __global__ void cudaDoubleThreshold(float* f_nmsIn, float* f_threshOut,
         else
             f_threshOut[idx] = 0;
     }
+}
+
+
+__global__ void cudaHysteresis(float* f_threshIn, float* f_hystOut, U32 u32_width, U32 u32_height)
+{
+    U32 col = threadIdx.x + blockIdx.x * blockDim.x;
+    U32 row = threadIdx.y + blockIdx.y * blockDim.y;
+
+    if (0 < col && col < u32_width - 1 && 0 < row && row < u32_height - 1)
+    {
+        U32 id = row * u32_width + col - u32_width;
+        for (int i = 0; i < 2; ++i)
+        {
+            if (f_threshIn[id - 1] == 255 || f_threshIn[id] == 255 || f_threshIn[id + 1] == 255)
+                f_hystOut[id] = 255;
+            id += u32_width;
+        }
+
+    }
+
+    // if (f_threshIn[col] == 255)
+    //     f_hystOut[col] = 255;
+    // else if (f_threshIn[col - 1] || f_threshIn[co])
 }
 
 

@@ -315,7 +315,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaFree(dEdgeGradient);
     cudaFree(dDirections);
 
-    // START step 4
     //step 4 double thresholding
     cudaEventRecord(start);
     cudaEventRecord(lStart);
@@ -328,10 +327,11 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
         float f_max = utilGetMax(dNmsOutput, width * height);
-        //further allocations and thread configs here
+        
         dim3 dblThreshold_dimGrid(16, 16, 1);
         dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
-        cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, width, height, 0.05, 0.09, f_max);
+
+        cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, 0.05, 0.09, width, height, f_max);
         cudaDeviceSynchronize();
     }
 
@@ -341,19 +341,23 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     timestamps[3] = time;//store to timestamp array
 
     cudaFree(dNmsOutput);
-    // END step 4
 
-    //step 5 edge tracking via hysterersis
+    // START step 5 edge tracking via hysterersis
     cudaEventRecord(start);
     cudaEventRecord(lStart);
 
     float* dHysteresisOut;
     cudaMalloc(&dHysteresisOut, sizeof(float)*imgSize);
     //further allocations and thread configs here
+    if (stage == 4) {
+        cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+    } else if (stage < 4) {
+        dim3 hysteresis_dimGrid(16, 16, 1);
+        dim3 hysteresis_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
+        cudaHysteresis<<<hysteresis_dimGrid, hysteresis_dimBlock>>>(dThreshOut, dHysteresisOut, width, height);
+    }
 
-    //placeholder to ensure framework functionality
-    cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
-
+    // END step 5
     cudaEventRecord(lEnd);
     cudaEventSynchronize(lEnd);
     cudaEventElapsedTime(&time, lStart, lEnd);

@@ -151,7 +151,7 @@ void serialDoubleThreshold( float* nmsIn, float* threshOut,
     }
 
     // TODO
-    // printf("serial max %f\n", max);
+    printf("serial max %f\n", max);
 
     float highThresh = max * highThreshRatio;
     float lowThresh = highThresh * lowThreshRatio;

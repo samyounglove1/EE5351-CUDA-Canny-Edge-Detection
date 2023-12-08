@@ -15,9 +15,9 @@ __global__ void floatArrToUnsignedChar(float* inImage, unsigned char* outImage, 
 
 
 __global__ void cudaDoubleThreshold(float* f_nmsIn, float* f_threshOut,
-                                    U32 u32_width, U32 u32_height,
                                     float f_lowThreshRatio, float f_highThreshRatio,
-                                    float f_max);
+                                    U32 u32_width, U32 u32_height, float f_max);
+__global__ void cudaHysteresis(float* f_threshIn, float* f_hystOut, U32 u32_width, U32 u32_height);
 
 
 
