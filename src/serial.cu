@@ -82,7 +82,6 @@ void serialSobelFilter(float* imageIn, float* edgeGradient, float* direction, in
                 max = edgeGradient[id];
         }
     }
-    printf("serial max gradient: %f\n", max);
 
     //normalize edgeGradient values
     for (int y = 0; y < height; y++) {
@@ -151,6 +150,7 @@ void serialDoubleThreshold( float* nmsIn, float* threshOut,
         }
     }
 
+    // TODO remove
     printf("serial max: %f\n", max);
 
     float highThresh = max * highThreshRatio;

@@ -11,7 +11,7 @@ float utilGetMax(float* arr, U32 size)
     //arr should already be a device array
     float* maxOut;//allocate array to hold resulting max values
     unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
-    // printf("size: %d divSize: %d\n", size, divSize);
+
     cudaMalloc(&maxOut, sizeof(float)*divSize);
 
     maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
@@ -25,69 +25,7 @@ float utilGetMax(float* arr, U32 size)
     float res = 0;
     cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
     cudaFree(maxOut);
-    // printf("res %f\n", res);
-    return res;
-}
 
-__global__ void maxReduction2(float* arr, U32 size, float* res)
-{
-    
-    if (threadIdx.x == 0 && blockIdx.x == 0)
-    {
-        printf("%f\n", arr[128]);
-        float max = 0.0f;
-        for (int i = 0; i < size; ++i)
-        {
-            if (arr[i] > max)
-            {
-                printf("%d %f ", i, arr[i]);
-                max = arr[i];
-            }
-            __syncthreads();
-        }
-        printf("\n\nmax: %f\n", max);
-    }
-    __syncthreads();
-}
-
-float utilGetMax_2(float* arr, U32 size, float *dNmsOutput) 
-{
-    float max = 0.0f;
-    for (int i = 0; i < size; ++i)
-    {
-        if (arr[i] > max)
-        {
-            max = arr[i];
-        }
-    }
-    printf("\nutilGetMax_2 serial max: %f\n", max);
-
-    float* maxOut;
-    cudaMalloc(&maxOut, sizeof(float));
-    maxReduction2<<<1, 1>>>(dNmsOutput, size, maxOut);
-    cudaDeviceSynchronize();
-
-    
-    
-    // //arr should already be a device array
-    // float* maxOut;//allocate array to hold resulting max values
-    // unsigned int divSize = ceil((float) size / (maxReduceBlockSize * 2));
-    // printf("size: %d divSize: %d\n", size, divSize);
-    // cudaMalloc(&maxOut, sizeof(float)*divSize);
-
-    // maxReduction<<<divSize, maxReduceBlockSize>>>(arr, maxOut, size);
-    // while (divSize > 1) {
-    //     cudaDeviceSynchronize();
-    //     unsigned int tempDivSize = divSize;
-    //     divSize = ceil((float) divSize / (maxReduceBlockSize * 2));
-    //     maxReduction<<<divSize, maxReduceBlockSize>>>(maxOut, maxOut, tempDivSize);
-    //     printf("tempDivSize: %d\n", tempDivSize);
-    // }
-    // cudaDeviceSynchronize();
-    float res = 0;
-    cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(maxOut);
-    // printf("res %f\n", res);
     return res;
 }
 
@@ -269,7 +207,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
         cudaDeviceSynchronize();
 
         float maxGradient = utilGetMax(dEdgeGradient, imgSize);
-        printf("cuda maxGradient: %f\n", maxGradient);
 
         dim3 blockSizeGradNorm(GRADIENT_NORM_BLOCK_SIZE, GRADIENT_NORM_BLOCK_SIZE);
         dim3 gridSizeGradNorm(ceil((float) width / GRADIENT_NORM_BLOCK_SIZE), ceil((float) height / GRADIENT_NORM_BLOCK_SIZE));
@@ -297,8 +234,8 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     } else if (stage < 2) {
         dim3 blockSizeNonMax(NON_MAX_BLOCK_SIZE, NON_MAX_BLOCK_SIZE);
         dim3 gridSizeNonMax(ceil((float) width / NON_MAX_BLOCK_SIZE), ceil((float) height / NON_MAX_BLOCK_SIZE));
-// FAULT
-nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirections, dNmsOutput, width, height);
+
+        nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirections, dNmsOutput, width, height);
         cudaDeviceSynchronize();
     }
 
@@ -321,15 +258,13 @@ nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirect
     if (stage == 3) {
         cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
     } else if (stage < 3) {
-        float *h_nms = (float*)malloc(width * height * sizeof(float));
-        cudaMemcpy(h_nms, dNmsOutput, width * height * sizeof(float), cudaMemcpyDeviceToHost);
-        float f_max = utilGetMax_2(h_nms, width * height, dNmsOutput);
-        printf("cuda max: %f\n", f_max);
-        // f_max = 149.156815;
-        // dim3 dblThreshold_dimGrid(16, 16, 1);
+        float f_max = utilGetMax(dNmsOutput, width * height);
+        
+        // TODO remove
+        printf("cuda f_max: %f\n", f_max);
+
         dim3 dblThreshold_dimBlock(16, 16, 1);
         dim3 dblThreshold_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
-        // dim3 dblThreshold_dimBlock(ceil((float)width / 16), ceil((float)height / 16), 1);
 
         cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, 0.05, 0.09, width, height, f_max);
         cudaDeviceSynchronize();
@@ -339,9 +274,6 @@ nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirect
     cudaEventSynchronize(lEnd);
     cudaEventElapsedTime(&time, lStart, lEnd);
     timestamps[3] = time;//store to timestamp array
-
-// FAULT
-// cudaFree(dNmsOutput);
 
     // step 5 edge tracking via hysterersis
     cudaEventRecord(start);
@@ -372,7 +304,7 @@ nonMaximumSupression<<<gridSizeNonMax, blockSizeNonMax>>>(dEdgeGradient, dDirect
     unsigned char* dImageOut;
     cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
     unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
-floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
+    floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
     
     cudaEventRecord(lEnd);
     cudaEventSynchronize(lEnd);
@@ -391,7 +323,6 @@ floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOu
 
     //final free operations, subject to change
     cudaFree(dImageOut);
-    // cudaFree(dThreshOut);
     cudaEventDestroy(start);
     cudaEventDestroy(lStart);
     cudaEventDestroy(lEnd);

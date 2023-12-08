@@ -183,8 +183,9 @@ int main(int argc, char *argv[]) {
 }
 
 void multiImageBenchmarkTests() {
-    int numTests = 1;
-    std::string tests[numTests] = {"256x256", "512x512", "1Kx1K", "2Kx2K", "4Kx4K", "4Kx6K"};
+    int numTests = 7;
+    // TODO remove "256x256"
+    std::string tests[numTests] = {"256x256", "dog_flag", "512x512", "1Kx1K", "2Kx2K", "4Kx4K", "4Kx6K"};
 
     double* serialBenchmarks = (double*) malloc(sizeof(double)*7);
     double* cudaBenchmarks = (double*) malloc(sizeof(double)*7);

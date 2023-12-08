@@ -77,9 +77,9 @@ __global__ void nonMaximumSupression(float* inGradient, float* inAngle, float* o
         }
         
         // Prevent edge pixels from grabbing out of bounds
-        int row_plus  = (row == height) ? row : row + 1;
+        int row_plus  = (row == height - 1) ? row : row + 1;
         int row_minus = (row == 0)      ? row : row - 1;
-        int col_plus  = (col == width)  ? col : col + 1;
+        int col_plus  = (col == width - 1)  ? col : col + 1;
         int col_minus = (col == 0)      ? col : col - 1;
 
         // 0 degrees
@@ -120,11 +120,6 @@ __global__ void cudaDoubleThreshold(float* f_nmsIn, float* f_threshOut,
 {
     U32 row = threadIdx.y  + blockIdx.y * blockDim.y;
     U32 col = threadIdx.x + blockIdx.x * blockDim.x;
-
-    if (row == 0 && col == 0)
-    {
-        printf("width: %d height: %d\n", u32_width, u32_height);
-    }
 
     if (col < u32_width && row < u32_height)
     {
