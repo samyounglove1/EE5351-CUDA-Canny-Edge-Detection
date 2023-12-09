@@ -2,8 +2,8 @@ NVCC        = nvcc
 NVCC_FLAGS  = -I/usr/local/cuda/include
 OPENCV_FLAGS = `pkg-config opencv4 --cflags --libs`
 
-ifdef rtx38ti
-	NVCC_FLAGS  += -gencode=arch=compute_86,code=\"sm_86\"
+ifdef SM
+	NVCC_FLAGS  += -gencode=arch=compute_$(SM),code=\"sm_$(SM)\"
 else
 	NVCC_FLAGS  += -gencode=arch=compute_75,code=\"sm_75\"
 endif
