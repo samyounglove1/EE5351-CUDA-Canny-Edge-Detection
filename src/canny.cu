@@ -288,6 +288,7 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
         dim3 hysteresis_dimBlock(16, 16, 1);
         dim3 hysteresis_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
         cudaHysteresis<<<hysteresis_dimGrid, hysteresis_dimBlock>>>(dThreshOut, dHysteresisOut, width, height);
+        cudaDeviceSynchronize();
     }
 
     cudaEventRecord(lEnd);
