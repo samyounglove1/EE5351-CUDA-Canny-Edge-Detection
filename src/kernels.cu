@@ -143,15 +143,32 @@ __global__ void cudaHysteresis(float* f_threshIn, float* f_hystOut, U32 u32_widt
 {
     U32 col = threadIdx.x + blockIdx.x * blockDim.x;
     U32 row = threadIdx.y + blockIdx.y * blockDim.y;
+    unsigned int idx = row * u32_width + col;
+    
+    f_hystOut[idx] = 0;
 
     if (0 < col && col < u32_width - 1 && 0 < row && row < u32_height - 1)
     {
-        U32 id = row * u32_width + col - u32_width;
-        for (int i = 0; i < 2; ++i)
-        {
-            if (f_threshIn[id - 1] == 255 || f_threshIn[id] == 255 || f_threshIn[id + 1] == 255)
-                f_hystOut[id] = 255;
-            id += u32_width;
+        if (f_threshIn[idx] == 255) {
+            f_hystOut[idx] = 255;
+        } else if (f_threshIn[idx] == 25) {
+            // U32 id = idx - u32_width;
+            if (f_threshIn[idx - 1] == 255 || f_threshIn[idx + 1] == 255) {
+                //left or right neighbor is strong
+                f_hystOut[idx] = 255;
+                return;
+            }
+            //check row above and below
+            unsigned int idl = idx - u32_width;//subtract to move up one row while keeping same x dimension
+            if (f_threshIn[idl - 1] == 255 || f_threshIn[idl] == 255 || f_threshIn[idl + 1] == 255) {
+                f_hystOut[idx] = 255;
+                return;
+            }
+            idl += 2*u32_width;//move down 2 rows
+            if (f_threshIn[idl - 1] == 255 || f_threshIn[idl] == 255 || f_threshIn[idl + 1] == 255) {
+                f_hystOut[idx] = 255;
+                return;
+            } //otherwise no neighbor is strong and value of output remains 0
         }
     }
 }

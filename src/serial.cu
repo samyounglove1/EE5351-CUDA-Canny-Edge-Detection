@@ -189,22 +189,24 @@ void serialHysteresis(float* threshIn, float* hystOut, int width, int height) {
                 //cell already strong, simply add to output and continue
                 hystOut[id] = 255;
                 continue;
-            } else if (threshIn[id - 1] == 255 || threshIn[id + 1] == 255) {
-                //left or right neighbor is strong
-                hystOut[id] = 255;
-                continue;
+            } else if (threshIn[id] == 25) {
+                if (threshIn[id - 1] == 255 || threshIn[id + 1] == 255) {
+                    //left or right neighbor is strong
+                    hystOut[id] = 255;
+                    continue;
+                }
+                //check row above and below
+                unsigned int idl = id - width;//subtract to move up one row while keeping same x dimension
+                if (threshIn[idl - 1] == 255 || threshIn[idl] == 255 || threshIn[idl + 1] == 255) {
+                    hystOut[id] = 255;
+                    continue;
+                }
+                idl += 2*width;//move down 2 rows
+                if (threshIn[idl - 1] == 255 || threshIn[idl] == 255 || threshIn[idl + 1] == 255) {
+                    // hystOut[id] = 255;
+                    continue;
+                } //otherwise no neighbor is strong and value of output remains 0
             }
-            //check row above and below
-            id -= width;//subtract to move up one row while keeping same x dimension
-            if (threshIn[id - 1] == 255 || threshIn[id] == 255 || threshIn[id + 1] == 255) {
-                hystOut[id] = 255;
-                continue;
-            }
-            id += 2*width;//move down 2 rows
-            if (threshIn[id - 1] == 255 || threshIn[id] == 255 || threshIn[id + 1] == 255) {
-                hystOut[id] = 255;
-                continue;
-            } //otherwise no neighbor is strong and value of output remains 0
         }
     }
 }

@@ -176,7 +176,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     //put next stage functions here, be sure to update later call free's and kernel func input vars
 
     //step 2 gradient calculation
-    cudaEventRecord(start);
     cudaEventRecord(lStart);
 
     //allocations
@@ -222,7 +221,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaFree(dGaussFilterOut);
 
     //step 3 non-max suppression
-    cudaEventRecord(start);
     cudaEventRecord(lStart);
 
     //allocations
@@ -247,7 +245,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaFree(dDirections);
 
     //step 4 double thresholding
-    cudaEventRecord(start);
     cudaEventRecord(lStart);
 
     //allocations
@@ -276,7 +273,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     cudaFree(dNmsOutput);
 
     // step 5 edge tracking via hysterersis
-    cudaEventRecord(start);
     cudaEventRecord(lStart);
 
     float* dHysteresisOut;
@@ -300,7 +296,6 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
 
     //end variable cast to unsigned char behavior
     //need this because our intermediary operations will be working with floats for greater accuracy
-    cudaEventRecord(start);
     cudaEventRecord(lStart);
     unsigned char* dImageOut;
     cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
