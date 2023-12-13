@@ -25,6 +25,8 @@ float utilGetMax(float* arr, U32 size)
     cudaMemcpy(&res, maxOut, sizeof(float), cudaMemcpyDeviceToHost);
     cudaFree(maxOut);
 
+    // printf("found max %f\n", res);
+
     return res;
 }
 
@@ -82,8 +84,10 @@ __global__ void gradientCalculation(float* inImage, float* outGradient, float* o
 
     int n = GRADIENT_KERNEL_SIZE >> 1;
 
-    int row = blockIdx.y * GRADIENT_TILE_SIZE + ty - n;
-    int col = blockIdx.x * GRADIENT_TILE_SIZE + tx - n;
+    int row_o = blockIdx.y * GRADIENT_TILE_SIZE + ty; 
+    int col_o = blockIdx.x * GRADIENT_TILE_SIZE + tx; 
+    int row = row_o - n;
+    int col = col_o - n;
 
     // Load input tile into shared memory
     if ((row >= 0) && (row < height) && (col >= 0) && (col < width)) {
@@ -95,21 +99,79 @@ __global__ void gradientCalculation(float* inImage, float* outGradient, float* o
 
     __syncthreads();
 
-    if ((tx >= n) && (tx < GRADIENT_BLOCK_SIZE - n) && 
-        (ty >= n) && (ty < GRADIENT_BLOCK_SIZE - n)) {
+    if (tx < GRADIENT_TILE_SIZE && ty < GRADIENT_TILE_SIZE) {
         
         // Calculate x and y gradients individually
         float xval = 0, yval = 0;
         for (int j = 0; j < GRADIENT_KERNEL_SIZE; j++) {
             for (int i = 0; i < GRADIENT_KERNEL_SIZE; i++) {
-                xval += ins[ty - n + j][tx - n + i] * Sobel_Kernel_X[j * GRADIENT_KERNEL_SIZE + i];
-                yval += ins[ty - n + j][tx - n + i] * Sobel_Kernel_Y[j * GRADIENT_KERNEL_SIZE + i];
+                xval += ins[j + ty][i + tx] * Sobel_Kernel_X[j * GRADIENT_KERNEL_SIZE + i];
+                yval += ins[j + ty][i + tx] * Sobel_Kernel_Y[j * GRADIENT_KERNEL_SIZE + i];
             }
         }
 
-        if((row < height) && (col < width)) {
-            outGradient[row * width + col] = hypotf(xval, yval);
-            outSlope[row * width + col] = atan2f(yval, xval);
+        if(row_o < height && col_o < width) {
+            outGradient[row_o * width + col_o] = hypotf(xval, yval);
+            outSlope[row_o * width + col_o] = atan2f(yval, xval);
+        }
+    }
+}
+
+#define DOUBLE_THRESH_HYST_BLOCK_SIZE 32
+#define DOUBLE_THRESH_HYST_TILE_SIZE 30
+__global__ void doubleThreshHysteris(float* nmsIn, unsigned char* hystOut, float lowThreshRatio, float highThreshRatio, unsigned int width, unsigned int height, float max) {
+    float highThresh = max*highThreshRatio;
+    float lowThresh = highThresh*lowThreshRatio;
+    
+    //one pixel wide halo
+    __shared__ float inMem[DOUBLE_THRESH_HYST_BLOCK_SIZE][DOUBLE_THRESH_HYST_BLOCK_SIZE];
+
+    unsigned int tx = threadIdx.x;
+    unsigned int ty = threadIdx.y;
+
+    int rowO = blockIdx.y * DOUBLE_THRESH_HYST_TILE_SIZE + ty;
+    int colO = blockIdx.x * DOUBLE_THRESH_HYST_TILE_SIZE + tx;
+    int rowI = rowO - 1; // offset for the 1 pixel halo 
+    int colI = colO - 1; // offset for the 1 pixel halo 
+
+    bool found = false;
+
+    if (rowI >= 0 && rowI < height && colI >= 0 && colI < width) {
+        inMem[ty][tx] = nmsIn[rowI * width + colI];
+        if (inMem[ty][tx] >= highThresh) {
+            inMem[ty][tx] = 255;
+        } else if (inMem[ty][tx] >= lowThresh) {
+            inMem[ty][tx] = 25;
+            found = true;
+        }
+    } else {
+        inMem[ty][tx] = 0;
+    }
+
+    __syncthreads(); //wait for all of inmem to be set
+
+    rowO -= 1;//account for halo offset
+    colO -= 1;
+
+    //do hysteresis only if needed
+    if ((tx != 0 && ty != 0 && tx != DOUBLE_THRESH_HYST_BLOCK_SIZE - 1 && ty != DOUBLE_THRESH_HYST_BLOCK_SIZE - 1) && //halo indices
+        (rowO < height && colO < width)) {//within image
+        if (inMem[ty][tx] == 255) {
+            hystOut[rowO * width + colO] = 255;
+        } else if (found) {
+            //check neighbors
+            if (inMem[ty-1][tx-1] == 255 ||
+                inMem[ty-1][tx] == 255 ||
+                inMem[ty-1][tx+1] == 255 ||
+                inMem[ty][tx-1] == 255 ||
+                inMem[ty][tx+1] == 255 ||
+                inMem[ty+1][tx-1] == 255 ||
+                inMem[ty+1][tx] == 255 ||
+                inMem[ty+1][tx+1] == 255) {
+                hystOut[rowO * width + colO] = 255;
+            } else {
+                hystOut[rowO * width + colO] = 0;
+            }
         }
     }
 }
@@ -247,74 +309,98 @@ void doCudaCannyInjectStage(    unsigned char* outImage, unsigned char* inImage,
     //step 4 double thresholding
     cudaEventRecord(lStart);
 
+    //experimental additions
     //allocations
-    float* dThreshOut;
-    cudaMalloc(&dThreshOut, sizeof(float)*imgSize);
-    if (stage == 3) {
-        cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
-    } else if (stage < 3) {
-        float f_max = utilGetMax(dNmsOutput, width * height);
-        
-        // TODO remove
-        // printf("cuda f_max: %f\n", f_max);
-
-        dim3 dblThreshold_dimBlock(16, 16, 1);
-        dim3 dblThreshold_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
-
-        cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, 0.05, 0.09, width, height, f_max);
-        cudaDeviceSynchronize();
-    }
-
-    cudaEventRecord(lEnd);
-    cudaEventSynchronize(lEnd);
-    cudaEventElapsedTime(&time, lStart, lEnd);
-    timestamps[3] = time;//store to timestamp array
+    unsigned char* dImageOut;
+    cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
+    cudaMemset(dImageOut, 0, sizeof(unsigned char)*imgSize);
+    //no stage injection for this
+    float max = utilGetMax(dNmsOutput, imgSize);
+    dim3 threshHystBlockSize(DOUBLE_THRESH_HYST_BLOCK_SIZE, DOUBLE_THRESH_HYST_BLOCK_SIZE);
+    dim3 threshHystGridSize(ceil((float) width / DOUBLE_THRESH_HYST_TILE_SIZE), ceil((float) height / DOUBLE_THRESH_HYST_TILE_SIZE));
+    doubleThreshHysteris<<<threshHystGridSize, threshHystBlockSize>>>(dNmsOutput, dImageOut, 0.05, 0.09, width, height, max);
+    cudaDeviceSynchronize();
 
     cudaFree(dNmsOutput);
 
-    // step 5 edge tracking via hysterersis
-    cudaEventRecord(lStart);
 
-    float* dHysteresisOut;
-    cudaMalloc(&dHysteresisOut, sizeof(float)*imgSize);
-    //further allocations and thread configs here
-    if (stage == 4) {
-        cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
-    } else if (stage < 4) {
-        dim3 hysteresis_dimBlock(16, 16, 1);
-        dim3 hysteresis_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
-        cudaHysteresis<<<hysteresis_dimGrid, hysteresis_dimBlock>>>(dThreshOut, dHysteresisOut, width, height);
-        cudaDeviceSynchronize();
-    }
 
-    cudaEventRecord(lEnd);
-    cudaEventSynchronize(lEnd);
-    cudaEventElapsedTime(&time, lStart, lEnd);
-    timestamps[4] = time;//store to timestamp array
+    // //allocations
+    // float* dThreshOut;
+    // cudaMalloc(&dThreshOut, sizeof(float)*imgSize);
+    // if (stage == 3) {
+    //     cudaMemcpy(dThreshOut, injection, sizeof(float)*imgSize, cudaMemcpyHostToDevice);
+    // } else if (stage < 3) {
+    //     float f_max = utilGetMax(dNmsOutput, width * height);
+        
+    //     // TODO remove
+    //     // printf("cuda f_max: %f\n", f_max);
 
-    cudaFree(dThreshOut);
+    //     dim3 dblThreshold_dimBlock(16, 16, 1);
+    //     dim3 dblThreshold_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
+
+    //     cudaDoubleThreshold<<<dblThreshold_dimGrid, dblThreshold_dimBlock>>>(dNmsOutput, dThreshOut, 0.05, 0.09, width, height, f_max);
+    //     cudaDeviceSynchronize();
+    // }
+
+    // cudaEventRecord(lEnd);
+    // cudaEventSynchronize(lEnd);
+    // cudaEventElapsedTime(&time, lStart, lEnd);
+    // timestamps[3] = time;//store to timestamp array
+
+    // cudaFree(dNmsOutput);
+
+    // // step 5 edge tracking via hysterersis
+    // cudaEventRecord(lStart);
+
+    // float* dHysteresisOut;
+    // cudaMalloc(&dHysteresisOut, sizeof(float)*imgSize);
+    // //further allocations and thread configs here
+    // if (stage == 4) {
+    //     cudaMemcpy(dHysteresisOut, dThreshOut, sizeof(float)*imgSize, cudaMemcpyDeviceToDevice);
+    // } else if (stage < 4) {
+    //     dim3 hysteresis_dimBlock(16, 16, 1);
+    //     dim3 hysteresis_dimGrid(ceil((float)width / 16), ceil((float)height / 16), 1);
+    //     cudaHysteresis<<<hysteresis_dimGrid, hysteresis_dimBlock>>>(dThreshOut, dHysteresisOut, width, height);
+    //     cudaDeviceSynchronize();
+    // }
+
+    // cudaEventRecord(lEnd);
+    // cudaEventSynchronize(lEnd);
+    // cudaEventElapsedTime(&time, lStart, lEnd);
+    // timestamps[4] = time;//store to timestamp array
+
+    // cudaFree(dThreshOut);
 
     //end variable cast to unsigned char behavior
     //need this because our intermediary operations will be working with floats for greater accuracy
-    cudaEventRecord(lStart);
-    unsigned char* dImageOut;
-    cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
-    // cudaMemset(&dImageOut, 0, sizeof(unsigned char) * imgSize);
-    unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
-    floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
+    // cudaEventRecord(lStart);
+    // unsigned char* dImageOut;
+    // cudaMalloc(&dImageOut, sizeof(unsigned char)*imgSize);
+    // // cudaMemset(&dImageOut, 0, sizeof(unsigned char) * imgSize);
+    // unsigned int nBlocks = ceil((float) imgSize / CONVERT_BLOCK_SIZE);
+    // floatArrToUnsignedChar<<<nBlocks, CONVERT_BLOCK_SIZE>>>(dHysteresisOut, dImageOut, imgSize);
     
+    // cudaEventRecord(lEnd);
+    // cudaEventSynchronize(lEnd);
+    // cudaEventElapsedTime(&time, lStart, lEnd);
+    // timestamps[5] = time;//store to timestamp array
+    
+    //overall timing record
+
     cudaEventRecord(lEnd);
     cudaEventSynchronize(lEnd);
     cudaEventElapsedTime(&time, lStart, lEnd);
+    timestamps[3] = 0;//not applicable in experimental branch
+    timestamps[4] = 0;//not applicable in experimental branch
     timestamps[5] = time;//store to timestamp array
-    
-    //overall timing record
+
     cudaEventElapsedTime(&time, start, lEnd);
     timestamps[6] = time;
     
     cudaDeviceSynchronize();
     
-    cudaFree(dHysteresisOut);
+    // cudaFree(dHysteresisOut);
 
     cudaMemcpy(outImage, dImageOut, sizeof(unsigned char)*imgSize, cudaMemcpyDeviceToHost);
 
