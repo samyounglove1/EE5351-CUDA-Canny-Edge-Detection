@@ -16,6 +16,8 @@ void doCudaCanny(unsigned char* outImage, unsigned char* inImage, double* timest
     doCudaCannyInjectStage(outImage, inImage, timestamps, width, height, -1, nullptr);
 }
 
+// void exDoCudaCanny(unsigned char* outImage, unsigned char* inImage, double* timestamps, int width, int height);
+
 // void doSerialCanny(unsigned char* outImage, unsigned char* inImage, double* timestamps, int width, int height);
 void doSerialCannyExtractStage(unsigned char* outImage, unsigned char* inImage, double* timestamps, int width, int height, int stage, float* extracted);
 //default call
@@ -81,6 +83,21 @@ void prettyPrintBenchmarks(std::string name, double* serialBenchmarks, double* c
         std::cout << std::right << std::setw(12) << std::setfill(' ') << std::to_string(speedup) + 'X';
     }
     std::cout << std::endl;
+
+    //print stats for serial
+    if (!parallelOnly) {
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << name << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(9) << std::setfill(' ') << "Speedups" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[0] / cudaBenchmarks[0] << "X" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[1] / cudaBenchmarks[1] << "X" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[2] / cudaBenchmarks[2] << "X" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[3] / cudaBenchmarks[3] << "X" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[4] / cudaBenchmarks[4] << "X" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[5] / cudaBenchmarks[5] << "X" << std::setw(3) << " | ";
+        std::cout << std::right << std::setw(10) << std::setfill(' ') << serialBenchmarks[6] / cudaBenchmarks[6] << "X" << std::setw(3) << " | ";
+        // std::cout << std::right << std::setw(12) << std::setfill(' ') << ((equal) ? "PASSED" : "FAILED") << std::endl;
+        std::cout << std::endl;
+    }
 }
 
 
@@ -117,6 +134,9 @@ int main(int argc, char *argv[]) {
         }
         
     } else if (mode == 'i') { //user specified image
+        
+        cv::namedWindow("Post Serial Image", cv::WINDOW_NORMAL);
+        cv::namedWindow("Post CUDA Image", cv::WINDOW_NORMAL);
         cv::Mat baseImage = cv::imread(argv[2]);
         if (baseImage.empty()) {
             printf("Failed to load image!\n");
@@ -131,12 +151,15 @@ int main(int argc, char *argv[]) {
             int w = greyImage.cols;
             int h = greyImage.rows;
 
-            //initialize images for eventual storage of the canny edge detections
             cv::Mat edgeImgCuda(h, w, CV_8UC1, cv::Scalar::all(0));  
             cv::Mat edgeImgSerial(h, w, CV_8UC1, cv::Scalar::all(0));
 
             doSerialCanny((uint8_t*) edgeImgSerial.data, (uint8_t*) greyImage.data, serialBenchmarks, w, h);
-            doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
+            if (argc == 4 && argv[3][1] == 'x') {
+                // exDoCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
+            } else {
+                doCudaCanny((uint8_t*) edgeImgCuda.data, (uint8_t*) greyImage.data, cudaBenchmarks, w, h);
+            }
 
             prettyPrintBenchmarks("custom", serialBenchmarks, cudaBenchmarks, equal(edgeImgSerial, edgeImgCuda), true, false);
 

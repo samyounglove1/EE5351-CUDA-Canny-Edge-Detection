@@ -82,8 +82,10 @@ __global__ void gradientCalculation(float* inImage, float* outGradient, float* o
 
     int n = GRADIENT_KERNEL_SIZE >> 1;
 
-    int row = blockIdx.y * GRADIENT_TILE_SIZE + ty - n;
-    int col = blockIdx.x * GRADIENT_TILE_SIZE + tx - n;
+    int row_o = blockIdx.y * GRADIENT_TILE_SIZE + ty; 
+    int col_o = blockIdx.x * GRADIENT_TILE_SIZE + tx; 
+    int row = row_o - n;
+    int col = col_o - n;
 
     // Load input tile into shared memory
     if ((row >= 0) && (row < height) && (col >= 0) && (col < width)) {
@@ -95,21 +97,20 @@ __global__ void gradientCalculation(float* inImage, float* outGradient, float* o
 
     __syncthreads();
 
-    if ((tx >= n) && (tx < GRADIENT_BLOCK_SIZE - n) && 
-        (ty >= n) && (ty < GRADIENT_BLOCK_SIZE - n)) {
+    if (tx < GRADIENT_TILE_SIZE && ty < GRADIENT_TILE_SIZE) {
         
         // Calculate x and y gradients individually
         float xval = 0, yval = 0;
         for (int j = 0; j < GRADIENT_KERNEL_SIZE; j++) {
             for (int i = 0; i < GRADIENT_KERNEL_SIZE; i++) {
-                xval += ins[ty - n + j][tx - n + i] * Sobel_Kernel_X[j * GRADIENT_KERNEL_SIZE + i];
-                yval += ins[ty - n + j][tx - n + i] * Sobel_Kernel_Y[j * GRADIENT_KERNEL_SIZE + i];
+                xval += ins[j + ty][i + tx] * Sobel_Kernel_X[j * GRADIENT_KERNEL_SIZE + i];
+                yval += ins[j + ty][i + tx] * Sobel_Kernel_Y[j * GRADIENT_KERNEL_SIZE + i];
             }
         }
 
-        if((row < height) && (col < width)) {
-            outGradient[row * width + col] = hypotf(xval, yval);
-            outSlope[row * width + col] = atan2f(yval, xval);
+        if(row_o < height && col_o < width) {
+            outGradient[row_o * width + col_o] = hypotf(xval, yval);
+            outSlope[row_o * width + col_o] = atan2f(yval, xval);
         }
     }
 }
